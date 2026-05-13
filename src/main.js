@@ -5,7 +5,7 @@
  */
 
 import * as camera from './camera.js';
-import { render } from './renderer.js';
+import { render, PALETTES } from './renderer.js';
 import { save } from './capture.js';
 
 // ── DOM ──
@@ -27,7 +27,10 @@ let running = false;
 let inputX = 0.5;
 let isTouching = false;
 let frozenData = null;
-let colorMode = 'normal';
+let currentPalette = 'bold';
+let bwOn = false;
+let invertOn = false;
+let edgesOn = true;
 
 const isMobile = 'ontouchstart' in window;
 
@@ -100,28 +103,60 @@ document.addEventListener('keydown', e => {
   if (e.key === 's' && !e.metaKey && !e.ctrlKey) saveScreenshot();
 });
 
-// ── COLOR MODE ──
-const colorModes = ['normal', 'bw', 'invert'];
+// ── PALETTE + MODIFIER WIRING ──
 
-function setColor(mode) {
-  colorMode = mode;
-  document.querySelectorAll('.color-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.color === mode);
+function setPalette(name) {
+  if (!(name in PALETTES)) return;
+  currentPalette = name;
+  document.querySelectorAll('.palette-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.palette === name);
+  });
+}
+
+function setToggle(name, on) {
+  if (name === 'bw') {
+    bwOn = on;
+    if (on) invertOn = false; // bw and invert are mutually exclusive
+  } else if (name === 'invert') {
+    invertOn = on;
+    if (on) bwOn = false;
+  } else if (name === 'edges') {
+    edgesOn = on;
+  }
+  document.querySelectorAll('.modifier-btn').forEach(b => {
+    const mod = b.dataset.modifier;
+    const active = (mod === 'bw' && bwOn) || (mod === 'invert' && invertOn) || (mod === 'edges' && edgesOn);
+    b.classList.toggle('active', active);
   });
 }
 
 function cycleColor() {
-  const idx = colorModes.indexOf(colorMode);
-  setColor(colorModes[(idx + 1) % colorModes.length]);
+  // keyboard shortcut: cycle normal -> bw -> invert -> normal
+  if (!bwOn && !invertOn) setToggle('bw', true);
+  else if (bwOn) { setToggle('bw', false); setToggle('invert', true); }
+  else { setToggle('invert', false); }
 }
 
-document.querySelectorAll('.color-btn').forEach(btn => {
+document.querySelectorAll('.palette-btn').forEach(btn => {
   const stop = e => e.stopPropagation();
   btn.addEventListener('touchstart', stop);
   btn.addEventListener('touchend', stop);
   btn.addEventListener('click', e => {
     e.stopPropagation();
-    setColor(btn.dataset.color);
+    setPalette(btn.dataset.palette);
+  });
+});
+
+document.querySelectorAll('.modifier-btn').forEach(btn => {
+  const stop = e => e.stopPropagation();
+  btn.addEventListener('touchstart', stop);
+  btn.addEventListener('touchend', stop);
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    const mod = btn.dataset.modifier;
+    if (mod === 'bw') setToggle('bw', !bwOn);
+    else if (mod === 'invert') setToggle('invert', !invertOn);
+    else if (mod === 'edges') setToggle('edges', !edgesOn);
   });
 });
 
@@ -195,12 +230,20 @@ function loop() {
     sourceData = sctx.getImageData(0, 0, SW, SH);
   }
 
+  // derive colorMode from toggles (invert beats bw beats normal)
+  const colorMode = invertOn ? 'invert' : (bwOn ? 'bw' : 'normal');
+
   // render
-  const { levels } = render(
+  const { colors } = render(
     ctx, sourceData, SW, SH,
     output.width, output.height,
-    { simplification: inputX, colorMode },
+    {
+      simplification: inputX,
+      palette: PALETTES[currentPalette],
+      colorMode,
+      showEdges: edgesOn,
+    },
   );
 
-  gridLabel.textContent = `${levels} colors`;
+  gridLabel.textContent = `${colors} colors`;
 }
