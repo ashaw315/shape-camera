@@ -33,5 +33,27 @@ import { bilateralSmooth, medianCutQuantize, detectEdges } from '/src/renderer.j
   console.assert(dst[2*4+1] < 150, 'bilateral: noisy pixel not smoothed', dst.slice(8,12));
   console.log('bilateral noisy: pass');
 }
+
+// ── medianCutQuantize: 3 distinct color regions, k=4 ──
+{
+  const sw = 12, sh = 1;
+  const rgba = new Uint8ClampedArray(sw * sh * 4);
+  const regions = [[255,0,0],[0,255,0],[0,0,255]];
+  for (let i = 0; i < 12; i++) {
+    const c = regions[Math.floor(i/4)];
+    rgba[i*4] = c[0]; rgba[i*4+1] = c[1]; rgba[i*4+2] = c[2]; rgba[i*4+3] = 255;
+  }
+  const indices = new Uint8Array(sw * sh);
+  const { palette, usedK } = medianCutQuantize(rgba, sw, sh, 4, indices);
+  console.assert(usedK >= 3, 'quantize: usedK should be >=3', usedK);
+
+  // each region's pixels should share an index
+  const r0 = indices[0], r1 = indices[4], r2 = indices[8];
+  console.assert(indices[1] === r0 && indices[2] === r0 && indices[3] === r0, 'quantize: region 0 fractured');
+  console.assert(indices[5] === r1 && indices[6] === r1 && indices[7] === r1, 'quantize: region 1 fractured');
+  console.assert(indices[9] === r2 && indices[10] === r2 && indices[11] === r2, 'quantize: region 2 fractured');
+  console.assert(r0 !== r1 && r1 !== r2 && r0 !== r2, 'quantize: regions share an index');
+  console.log('quantize: pass');
+}
 </script>
 </body></html>

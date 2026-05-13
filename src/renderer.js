@@ -65,20 +65,75 @@ export function bilateralSmooth(src, sw, sh, radius, sigmaColor, dst) {
 }
 
 export function medianCutQuantize(rgba, sw, sh, k, indicesOut) {
-  // Task 3 fills this in. Placeholder: one-entry palette = mean color, all indices 0.
-  let r = 0, g = 0, b = 0;
+  // Build sample list — every other pixel in x and y (4x downsample).
+  const sampleStride = 2;
+  const samples = [];
+  for (let y = 0; y < sh; y += sampleStride) {
+    for (let x = 0; x < sw; x += sampleStride) {
+      const i = (y * sw + x) * 4;
+      samples.push([rgba[i], rgba[i + 1], rgba[i + 2]]);
+    }
+  }
+
+  // Each bucket = { points: [...], ranges: [rR,rG,rB] }
+  function bucketStats(points) {
+    let rmin=255,rmax=0, gmin=255,gmax=0, bmin=255,bmax=0;
+    for (const p of points) {
+      if (p[0]<rmin) rmin=p[0]; if (p[0]>rmax) rmax=p[0];
+      if (p[1]<gmin) gmin=p[1]; if (p[1]>gmax) gmax=p[1];
+      if (p[2]<bmin) bmin=p[2]; if (p[2]>bmax) bmax=p[2];
+    }
+    return [rmax-rmin, gmax-gmin, bmax-bmin];
+  }
+
+  let buckets = [{ points: samples, ranges: bucketStats(samples) }];
+  while (buckets.length < k) {
+    // pick bucket with largest single-channel range
+    let bi = -1, best = -1;
+    for (let i = 0; i < buckets.length; i++) {
+      const r = Math.max(...buckets[i].ranges);
+      if (r > best) { best = r; bi = i; }
+    }
+    if (best <= 0) break; // degenerate: nothing left to split
+    const b = buckets[bi];
+    const axis = b.ranges.indexOf(Math.max(...b.ranges));
+    b.points.sort((p, q) => p[axis] - q[axis]);
+    const mid = b.points.length >> 1;
+    const left = b.points.slice(0, mid);
+    const right = b.points.slice(mid);
+    if (left.length === 0 || right.length === 0) break;
+    buckets.splice(bi, 1,
+      { points: left, ranges: bucketStats(left) },
+      { points: right, ranges: bucketStats(right) },
+    );
+  }
+
+  // Palette = mean of each bucket
+  const usedK = buckets.length;
+  const palette = new Uint8Array(k * 3);
+  for (let i = 0; i < usedK; i++) {
+    let sr=0, sg=0, sb=0;
+    for (const p of buckets[i].points) { sr+=p[0]; sg+=p[1]; sb+=p[2]; }
+    const n = buckets[i].points.length;
+    palette[i*3] = (sr/n)|0;
+    palette[i*3+1] = (sg/n)|0;
+    palette[i*3+2] = (sb/n)|0;
+  }
+
+  // Assign every full-res pixel its nearest palette index
   const n = sw * sh;
   for (let i = 0; i < n; i++) {
-    r += rgba[i * 4];
-    g += rgba[i * 4 + 1];
-    b += rgba[i * 4 + 2];
+    const r = rgba[i*4], g = rgba[i*4+1], b = rgba[i*4+2];
+    let bestI = 0, bestD = Infinity;
+    for (let p = 0; p < usedK; p++) {
+      const dr = r - palette[p*3], dg = g - palette[p*3+1], db = b - palette[p*3+2];
+      const d = dr*dr + dg*dg + db*db;
+      if (d < bestD) { bestD = d; bestI = p; }
+    }
+    indicesOut[i] = bestI;
   }
-  const palette = new Uint8Array(k * 3);
-  palette[0] = Math.round(r / n);
-  palette[1] = Math.round(g / n);
-  palette[2] = Math.round(b / n);
-  indicesOut.fill(0);
-  return { palette, usedK: 1 };
+
+  return { palette, usedK };
 }
 
 export function transformPalette(palette, usedK, satMul, colorMode) {
