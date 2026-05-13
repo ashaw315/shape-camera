@@ -55,5 +55,25 @@ import { bilateralSmooth, medianCutQuantize, detectEdges } from '/src/renderer.j
   console.assert(r0 !== r1 && r1 !== r2 && r0 !== r2, 'quantize: regions share an index');
   console.log('quantize: pass');
 }
+
+// ── detectEdges: 2-region indexed map, edge mask = boundary pixels ──
+{
+  const sw = 4, sh = 1;
+  const idx = new Uint8Array([0, 0, 1, 1]);
+  const mask = new Uint8Array(sw * sh);
+  detectEdges(idx, sw, sh, 1, mask);
+  // pixels 1 and 2 are the boundary (each has a 4-neighbor with a different index).
+  console.assert(mask[0] === 0, 'edge: 0 should not be edge', mask[0]);
+  console.assert(mask[1] === 1, 'edge: 1 should be edge', mask[1]);
+  console.assert(mask[2] === 1, 'edge: 2 should be edge', mask[2]);
+  console.assert(mask[3] === 0, 'edge: 3 should not be edge', mask[3]);
+
+  // dilation: thickness 2 should expand the mask outward
+  const mask2 = new Uint8Array(sw * sh);
+  detectEdges(idx, sw, sh, 2, mask2);
+  console.assert(mask2[0] === 1, 'edge dilate: 0 should be edge with thickness 2');
+  console.assert(mask2[3] === 1, 'edge dilate: 3 should be edge with thickness 2');
+  console.log('edges: pass');
+}
 </script>
 </body></html>

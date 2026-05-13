@@ -188,8 +188,35 @@ export function transformPalette(palette, usedK, satMul, colorMode) {
 }
 
 export function detectEdges(idx, sw, sh, thickness, mask) {
-  // Task 5 fills this in. Placeholder: no edges.
   mask.fill(0);
+  // pass 1: 4-neighbor boundary detection
+  for (let y = 0; y < sh; y++) {
+    for (let x = 0; x < sw; x++) {
+      const i = y * sw + x;
+      const v = idx[i];
+      if (x > 0 && idx[i - 1] !== v) { mask[i] = 1; continue; }
+      if (x < sw - 1 && idx[i + 1] !== v) { mask[i] = 1; continue; }
+      if (y > 0 && idx[i - sw] !== v) { mask[i] = 1; continue; }
+      if (y < sh - 1 && idx[i + sw] !== v) { mask[i] = 1; continue; }
+    }
+  }
+  // pass 2..thickness: dilate. Use a scratch copy so we don't see-our-own-writes.
+  if (thickness > 1) {
+    const tmp = new Uint8Array(sw * sh);
+    for (let pass = 1; pass < thickness; pass++) {
+      tmp.set(mask);
+      for (let y = 0; y < sh; y++) {
+        for (let x = 0; x < sw; x++) {
+          const i = y * sw + x;
+          if (tmp[i]) continue;
+          if (x > 0 && tmp[i - 1]) { mask[i] = 1; continue; }
+          if (x < sw - 1 && tmp[i + 1]) { mask[i] = 1; continue; }
+          if (y > 0 && tmp[i - sw]) { mask[i] = 1; continue; }
+          if (y < sh - 1 && tmp[i + sw]) { mask[i] = 1; continue; }
+        }
+      }
+    }
+  }
   return mask;
 }
 
