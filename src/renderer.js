@@ -36,8 +36,31 @@ function ensureBuffers(sw, sh) {
 // ── pure pipeline functions (stubs filled in later tasks) ──
 
 export function bilateralSmooth(src, sw, sh, radius, sigmaColor, dst) {
-  // Task 2 fills this in. For now, copy src to dst so the pipeline is wired.
-  dst.set(src);
+  const r = Math.max(1, Math.round(radius));
+  const sigSq = sigmaColor * sigmaColor;
+  for (let y = 0; y < sh; y++) {
+    for (let x = 0; x < sw; x++) {
+      const ci = (y * sw + x) * 4;
+      const cr = src[ci], cg = src[ci + 1], cb = src[ci + 2];
+      let sr = 0, sg = 0, sb = 0, count = 0;
+      const y0 = Math.max(0, y - r), y1 = Math.min(sh - 1, y + r);
+      const x0 = Math.max(0, x - r), x1 = Math.min(sw - 1, x + r);
+      for (let ny = y0; ny <= y1; ny++) {
+        for (let nx = x0; nx <= x1; nx++) {
+          const ni = (ny * sw + nx) * 4;
+          const dr = src[ni] - cr, dg = src[ni + 1] - cg, db = src[ni + 2] - cb;
+          if (dr * dr + dg * dg + db * db <= sigSq) {
+            sr += src[ni]; sg += src[ni + 1]; sb += src[ni + 2];
+            count++;
+          }
+        }
+      }
+      dst[ci] = (sr / count) | 0;
+      dst[ci + 1] = (sg / count) | 0;
+      dst[ci + 2] = (sb / count) | 0;
+      dst[ci + 3] = 255;
+    }
+  }
   return dst;
 }
 

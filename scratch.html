@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html><body>
+<h1>scratch — open the console</h1>
+<script type="module">
+import { bilateralSmooth, medianCutQuantize, detectEdges } from '/src/renderer.js';
+
+// ── bilateralSmooth: 2-region image, sharp boundary, no bleed ──
+{
+  const sw = 8, sh = 1;
+  const src = new Uint8ClampedArray(sw * sh * 4);
+  // left 4 pixels red, right 4 pixels blue
+  for (let i = 0; i < 4; i++) { src[i*4] = 255; src[i*4+3] = 255; }
+  for (let i = 4; i < 8; i++) { src[i*4+2] = 255; src[i*4+3] = 255; }
+  const dst = new Uint8ClampedArray(sw * sh * 4);
+  bilateralSmooth(src, sw, sh, 1, 30, dst);
+
+  // pixel 3 (last red) should still be red, pixel 4 (first blue) should still be blue.
+  console.assert(dst[3*4] > 200 && dst[3*4+2] < 30, 'bilateral: red region bled', dst.slice(12,16));
+  console.assert(dst[4*4+2] > 200 && dst[4*4] < 30, 'bilateral: blue region bled', dst.slice(16,20));
+  console.log('bilateral: pass');
+}
+
+// ── bilateralSmooth: noisy pixel within a region IS smoothed away ──
+{
+  const sw = 5, sh = 1;
+  const src = new Uint8ClampedArray(sw * sh * 4);
+  for (let i = 0; i < 5; i++) { src[i*4] = 200; src[i*4+3] = 255; } // all dark red
+  src[2*4] = 200; src[2*4+1] = 200; src[2*4+2] = 200; // noisy middle pixel = bright gray
+  const dst = new Uint8ClampedArray(sw * sh * 4);
+  bilateralSmooth(src, sw, sh, 1, 300, dst);
+  // middle should now be closer to red (neighbors dragged it down on G/B channels)
+  console.assert(dst[2*4+1] < 150, 'bilateral: noisy pixel not smoothed', dst.slice(8,12));
+  console.log('bilateral noisy: pass');
+}
+</script>
+</body></html>
