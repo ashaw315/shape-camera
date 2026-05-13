@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Shape Camera</title>
+  <link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+  <canvas id="output"></canvas>
+  <canvas id="source" style="display:none;"></canvas>
+  <video id="video" playsinline autoplay muted style="display:none;"></video>
+
+  <!-- START SCREEN -->
+  <div id="start-screen">
+    <div class="start-inner">
+      <h1>Shape Camera</h1>
+      <p class="tagline">your world, distilled to geometry</p>
+      <button id="btn-start">Enable Camera</button>
+      <span class="note">requires camera permission</span>
+    </div>
+  </div>
+
+  <!-- CONTROLS -->
+  <div id="ui" class="hidden">
+
+    <!-- TOP BAR -->
+    <div id="top-bar">
+      <button id="btn-flip" class="icon-btn" aria-label="Flip camera">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M16 3h5v5"/><path d="M8 21H3v-5"/>
+          <path d="M21 3l-7 7"/><path d="M3 21l7-7"/>
+        </svg>
+      </button>
+      <div id="grid-label"></div>
+      <button id="btn-save" class="icon-btn" aria-label="Save screenshot">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- FREEZE INDICATOR -->
+    <div id="freeze-badge" class="hidden">● hold</div>
+
+    <!-- BOTTOM BAR -->
+    <div id="bottom-bar">
+      <div id="shape-modes">
+        <button class="mode-btn active" data-mode="squares">Squares</button>
+        <button class="mode-btn" data-mode="lines">Lines</button>
+      </div>
+      <div id="color-modes">
+        <button class="color-btn active" data-color="normal">Color</button>
+        <button class="color-btn" data-color="bw">B&W</button>
+        <button class="color-btn" data-color="invert">Invert</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
