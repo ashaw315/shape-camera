@@ -11,7 +11,9 @@
 let bufSW = 0, bufSH = 0;
 let smoothBuf = null;          // Uint8ClampedArray, sw*sh*4
 let indices = null;            // Uint8Array, sw*sh
+let indicesScratch = null;     // Uint8Array, sw*sh — used by modeFilter for read-from copy
 let edgeMask = null;           // Uint8Array, sw*sh
+let edgeScratch = null;        // Uint8Array, sw*sh — used by morphClose for the dilated state
 let outBuf = null;             // Uint8ClampedArray, sw*sh*4
 let workCanvas = null;         // OffscreenCanvas | HTMLCanvasElement
 let workCtx = null;
@@ -22,7 +24,9 @@ function ensureBuffers(sw, sh) {
   const n = sw * sh;
   smoothBuf = new Uint8ClampedArray(n * 4);
   indices = new Uint8Array(n);
+  indicesScratch = new Uint8Array(n);
   edgeMask = new Uint8Array(n);
+  edgeScratch = new Uint8Array(n);
   outBuf = new Uint8ClampedArray(n * 4);
   if (typeof OffscreenCanvas !== 'undefined') {
     workCanvas = new OffscreenCanvas(sw, sh);
@@ -136,6 +140,28 @@ export function medianCutQuantize(rgba, sw, sh, k, indicesOut) {
   return { palette, usedK };
 }
 
+function modeFilter(indices, sw, sh, scratch) {
+  scratch.set(indices);
+  const counts = new Uint8Array(16);
+  for (let y = 0; y < sh; y++) {
+    for (let x = 0; x < sw; x++) {
+      counts.fill(0);
+      let bestI = scratch[y * sw + x];
+      let bestC = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        const ny = y + dy < 0 ? 0 : (y + dy >= sh ? sh - 1 : y + dy);
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx < 0 ? 0 : (x + dx >= sw ? sw - 1 : x + dx);
+          const v = scratch[ny * sw + nx];
+          const c = ++counts[v];
+          if (c > bestC) { bestC = c; bestI = v; }
+        }
+      }
+      indices[y * sw + x] = bestI;
+    }
+  }
+}
+
 function rgbToHsl(r, g, b) {
   r /= 255; g /= 255; b /= 255;
   const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
@@ -172,8 +198,13 @@ export function transformPalette(palette, usedK, satMul, colorMode) {
 
     // saturation boost in HSL
     const [h, s, l] = rgbToHsl(r, g, b);
-    const s2 = Math.min(1, s * satMul);
-    [r, g, b] = hslToRgb(h, s2, l);
+    if (l >= 0.08 && l <= 0.92) {
+      // boost saturation, enforce minimum floor
+      let s2 = Math.min(1, s * satMul);
+      if (s2 < 0.2) s2 = 0.2;
+      [r, g, b] = hslToRgb(h, s2, l);
+    }
+    // else: leave r/g/b unchanged (near-black or near-white)
 
     // color mode transform
     if (colorMode === 'bw') {
@@ -187,9 +218,8 @@ export function transformPalette(palette, usedK, satMul, colorMode) {
   return palette;
 }
 
-export function detectEdges(idx, sw, sh, thickness, mask) {
+export function detectEdges(idx, sw, sh, mask) {
   mask.fill(0);
-  // pass 1: 4-neighbor boundary detection
   for (let y = 0; y < sh; y++) {
     for (let x = 0; x < sw; x++) {
       const i = y * sw + x;
@@ -200,20 +230,75 @@ export function detectEdges(idx, sw, sh, thickness, mask) {
       if (y < sh - 1 && idx[i + sw] !== v) { mask[i] = 1; continue; }
     }
   }
-  // pass 2..thickness: dilate. Use a scratch copy so we don't see-our-own-writes.
-  if (thickness > 1) {
-    const tmp = new Uint8Array(sw * sh);
-    for (let pass = 1; pass < thickness; pass++) {
-      tmp.set(mask);
-      for (let y = 0; y < sh; y++) {
-        for (let x = 0; x < sw; x++) {
-          const i = y * sw + x;
-          if (tmp[i]) continue;
-          if (x > 0 && tmp[i - 1]) { mask[i] = 1; continue; }
-          if (x < sw - 1 && tmp[i + 1]) { mask[i] = 1; continue; }
-          if (y > 0 && tmp[i - sw]) { mask[i] = 1; continue; }
-          if (y < sh - 1 && tmp[i + sw]) { mask[i] = 1; continue; }
-        }
+  return mask;
+}
+
+function suppressLowContrastEdges(mask, idx, palette, sw, sh, minDist) {
+  const minDistSq = minDist * minDist;
+  for (let y = 0; y < sh; y++) {
+    for (let x = 0; x < sw; x++) {
+      const i = y * sw + x;
+      if (!mask[i]) continue;
+      const v = idx[i];
+      const cp = v * 3;
+      const cr = palette[cp], cg = palette[cp + 1], cb = palette[cp + 2];
+
+      // Find the smallest palette-distance among differing 4-neighbors.
+      let minSq = Infinity;
+      if (x > 0)         { const nv = idx[i - 1];  if (nv !== v) { const np = nv*3; const dr = palette[np]-cr, dg = palette[np+1]-cg, db = palette[np+2]-cb; const d = dr*dr+dg*dg+db*db; if (d < minSq) minSq = d; } }
+      if (x < sw - 1)    { const nv = idx[i + 1];  if (nv !== v) { const np = nv*3; const dr = palette[np]-cr, dg = palette[np+1]-cg, db = palette[np+2]-cb; const d = dr*dr+dg*dg+db*db; if (d < minSq) minSq = d; } }
+      if (y > 0)         { const nv = idx[i - sw]; if (nv !== v) { const np = nv*3; const dr = palette[np]-cr, dg = palette[np+1]-cg, db = palette[np+2]-cb; const d = dr*dr+dg*dg+db*db; if (d < minSq) minSq = d; } }
+      if (y < sh - 1)    { const nv = idx[i + sw]; if (nv !== v) { const np = nv*3; const dr = palette[np]-cr, dg = palette[np+1]-cg, db = palette[np+2]-cb; const d = dr*dr+dg*dg+db*db; if (d < minSq) minSq = d; } }
+
+      if (minSq < minDistSq) mask[i] = 0;
+    }
+  }
+}
+
+function morphClose(mask, sw, sh, dilated) {
+  // Dilate: any 4-neighbor is edge → I am edge.
+  // Write into dilated; read from mask.
+  for (let y = 0; y < sh; y++) {
+    for (let x = 0; x < sw; x++) {
+      const i = y * sw + x;
+      if (mask[i]) { dilated[i] = 1; continue; }
+      if ((x > 0 && mask[i - 1]) || (x < sw - 1 && mask[i + 1]) ||
+          (y > 0 && mask[i - sw]) || (y < sh - 1 && mask[i + sw])) {
+        dilated[i] = 1;
+      } else {
+        dilated[i] = 0;
+      }
+    }
+  }
+  // Erode: a pixel stays edge only if ALL its 4-neighbors are also edges in `dilated`.
+  // Edge of the image: a missing neighbor is treated as non-edge (conservative — erodes the rim).
+  for (let y = 0; y < sh; y++) {
+    for (let x = 0; x < sw; x++) {
+      const i = y * sw + x;
+      if (!dilated[i]) { mask[i] = 0; continue; }
+      if ((x > 0 && !dilated[i - 1]) || (x < sw - 1 && !dilated[i + 1]) ||
+          (y > 0 && !dilated[i - sw]) || (y < sh - 1 && !dilated[i + sw]) ||
+          x === 0 || x === sw - 1 || y === 0 || y === sh - 1) {
+        mask[i] = 0;
+      } else {
+        mask[i] = 1;
+      }
+    }
+  }
+}
+
+function dilateEdges(mask, sw, sh, thickness, scratch) {
+  if (thickness <= 1) return mask;
+  for (let pass = 1; pass < thickness; pass++) {
+    scratch.set(mask);
+    for (let y = 0; y < sh; y++) {
+      for (let x = 0; x < sw; x++) {
+        const i = y * sw + x;
+        if (scratch[i]) continue;
+        if (x > 0 && scratch[i - 1]) { mask[i] = 1; continue; }
+        if (x < sw - 1 && scratch[i + 1]) { mask[i] = 1; continue; }
+        if (y > 0 && scratch[i - sw]) { mask[i] = 1; continue; }
+        if (y < sh - 1 && scratch[i + sw]) { mask[i] = 1; continue; }
       }
     }
   }
@@ -230,15 +315,33 @@ export function render(ctx, sourceData, sw, sh, outW, outH, opts) {
   const bilateralRadius = 1 + simplification * 1;                    // 1..2
   const sigmaColor = 20 + simplification * 20;                       // 20..40
   const edgeThickness = Math.round(1 + simplification * 2);          // 1..3
+  const minEdgeContrast = 30 + simplification * 20;                  // 30..50
 
+  // 1. bilateral smooth
   bilateralSmooth(sourceData.data, sw, sh, bilateralRadius, sigmaColor, smoothBuf);
 
+  // 2. median-cut quantize
   const q = medianCutQuantize(smoothBuf, sw, sh, paletteSize, indices);
-  const palette = transformPalette(q.palette, q.usedK, 1.4, colorMode);
 
-  detectEdges(indices, sw, sh, edgeThickness, edgeMask);
+  // 3. mode-filter cleanup on indices
+  modeFilter(indices, sw, sh, indicesScratch);
 
-  // composite
+  // 4. palette transform (saturation boost + color mode)
+  const palette = transformPalette(q.palette, q.usedK, 1.9, colorMode);
+
+  // 5. edge detection (boundary only)
+  detectEdges(indices, sw, sh, edgeMask);
+
+  // 6. palette-distance edge suppression
+  suppressLowContrastEdges(edgeMask, indices, palette, sw, sh, minEdgeContrast);
+
+  // 7. morphological close
+  morphClose(edgeMask, sw, sh, edgeScratch);
+
+  // 8. edge dilation for thickness
+  dilateEdges(edgeMask, sw, sh, edgeThickness, edgeScratch);
+
+  // 9. composite
   for (let i = 0; i < sw * sh; i++) {
     const o = i * 4;
     if (edgeMask[i]) {

@@ -42,7 +42,7 @@ function resize() {
   output.width = w;
   output.height = h;
 
-  const scale = isMobile ? 0.4 : 0.5;
+  const scale = isMobile ? 0.5 : 0.65;
   SW = Math.floor(w * scale);
   SH = Math.floor(h * scale);
   sourceCanvas.width = SW;
