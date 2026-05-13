@@ -30,7 +30,7 @@ let frozenData = null;
 let currentPalette = 'bold';
 let bwOn = false;
 let invertOn = false;
-let edgesOn = true;
+let edgesOn = false;
 
 const isMobile = 'ontouchstart' in window;
 

@@ -72,6 +72,7 @@ let tinyCanvas = null, tinyCtx = null;   // tinyW × tinyH — downscaled + pale
 let edgeCanvas = null, edgeCtx = null;   // tinyW × tinyH — edges with transparent bg
 let srcW = 0, srcH = 0;
 let tinyW = 0, tinyH = 0;
+let blurBuf = null;  // Uint8ClampedArray, tinyW*tinyH*4 — scratch for the pre-mapping blur
 
 function makeCanvas(w, h) {
   if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h);
@@ -94,6 +95,44 @@ function ensureTinyCanvases(tw, th) {
   tinyCtx = tinyCanvas.getContext('2d', { willReadFrequently: true });
   edgeCanvas = makeCanvas(tw, th);
   edgeCtx = edgeCanvas.getContext('2d');
+  blurBuf = new Uint8ClampedArray(tw * th * 4);
+}
+
+function boxBlur3x3(pixels, scratch, tw, th, passes) {
+  let src = pixels, dst = scratch;
+  for (let pass = 0; pass < passes; pass++) {
+    for (let y = 0; y < th; y++) {
+      const y0 = y > 0 ? y - 1 : 0;
+      const y1 = y < th - 1 ? y + 1 : th - 1;
+      for (let x = 0; x < tw; x++) {
+        const x0 = x > 0 ? x - 1 : 0;
+        const x1 = x < tw - 1 ? x + 1 : tw - 1;
+        let sr = 0, sg = 0, sb = 0, sa = 0;
+        // unrolled 3x3
+        for (let ny = y0; ny <= y1; ny++) {
+          for (let nx = x0; nx <= x1; nx++) {
+            const i = (ny * tw + nx) * 4;
+            sr += src[i]; sg += src[i+1]; sb += src[i+2]; sa += src[i+3];
+          }
+        }
+        // count of pixels averaged — equals (y1-y0+1)*(x1-x0+1)
+        const count = (y1 - y0 + 1) * (x1 - x0 + 1);
+        const o = (y * tw + x) * 4;
+        dst[o]     = (sr / count) | 0;
+        dst[o + 1] = (sg / count) | 0;
+        dst[o + 2] = (sb / count) | 0;
+        dst[o + 3] = (sa / count) | 0;
+      }
+    }
+    // swap src and dst for next pass
+    const tmp = src; src = dst; dst = tmp;
+  }
+  // After the loop, `src` holds the latest output. If passes is even, `src === pixels`
+  // (the caller's buffer) and we're done. If passes is odd, `src === scratch` and we
+  // must copy back to pixels so the caller sees the result in their buffer.
+  if (src !== pixels) {
+    pixels.set(src);
+  }
 }
 
 export function render(ctx, sourceData, sw, sh, outW, outH, opts) {
@@ -104,7 +143,7 @@ export function render(ctx, sourceData, sw, sh, outW, outH, opts) {
   srcCtx.putImageData(sourceData, 0, 0);
 
   // Step 1b — derive tiny dimensions from simplification.
-  const tinyScale = 0.5 + (0.15 - 0.5) * simplification;  // 0.5..0.15
+  const tinyScale = 0.9 + (0.25 - 0.9) * simplification;  // 0.9..0.25
   const tw = Math.max(2, Math.round(sw * tinyScale));
   const th = Math.max(2, Math.round(sh * tinyScale));
   ensureTinyCanvases(tw, th);
@@ -117,6 +156,9 @@ export function render(ctx, sourceData, sw, sh, outW, outH, opts) {
   // Step 3 — read tiny pixels, map each to nearest palette color, apply colorMode in place.
   const img = tinyCtx.getImageData(0, 0, tw, th);
   const px = img.data;
+  // Pre-mapping blur: 2 passes of 3x3 box average. Merges single-pixel noise so the
+  // palette mapper doesn't snap adjacent noisy pixels to wildly different palette colors.
+  boxBlur3x3(px, blurBuf, tw, th, 2);
   const n = tw * th;
   const pal = palette;          // [[r,g,b], ...]
   const palN = pal.length;
@@ -172,7 +214,7 @@ export function render(ctx, sourceData, sw, sh, outW, outH, opts) {
 
   // Step 6 — upscale color regions onto output with smoothing.
   ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'medium';
+  ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(tinyCanvas, 0, 0, outW, outH);
 
   // Step 7 — overlay edges crisp (only if enabled).
