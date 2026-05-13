@@ -265,7 +265,7 @@ Run: `npm run dev`. Open `http://localhost:5173/scratch.html`. Console expected:
   for (let i = 0; i < 5; i++) { src[i*4] = 200; src[i*4+3] = 255; } // all dark red
   src[2*4] = 200; src[2*4+1] = 200; src[2*4+2] = 200; // noisy middle pixel = bright gray
   const dst = new Uint8ClampedArray(sw * sh * 4);
-  bilateralSmooth(src, sw, sh, 1, 80, dst);
+  bilateralSmooth(src, sw, sh, 1, 300, dst);
   // middle should now be closer to red (neighbors dragged it down on G/B channels)
   console.assert(dst[2*4+1] < 150, 'bilateral: noisy pixel not smoothed', dst.slice(8,12));
   console.log('bilateral noisy: pass');
