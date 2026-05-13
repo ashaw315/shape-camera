@@ -136,8 +136,54 @@ export function medianCutQuantize(rgba, sw, sh, k, indicesOut) {
   return { palette, usedK };
 }
 
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+  const l = (mx + mn) / 2;
+  if (mx === mn) return [0, 0, l];
+  const d = mx - mn;
+  const s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+  let h;
+  if (mx === r) h = ((g - b) / d + (g < b ? 6 : 0));
+  else if (mx === g) h = (b - r) / d + 2;
+  else h = (r - g) / d + 4;
+  return [h / 6, s, l];
+}
+
+function hslToRgb(h, s, l) {
+  if (s === 0) { const v = (l * 255) | 0; return [v, v, v]; }
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const hk = h;
+  const t = [hk + 1/3, hk, hk - 1/3].map(x => x < 0 ? x + 1 : x > 1 ? x - 1 : x);
+  const ch = t.map(x => {
+    if (x < 1/6) return p + (q - p) * 6 * x;
+    if (x < 1/2) return q;
+    if (x < 2/3) return p + (q - p) * (2/3 - x) * 6;
+    return p;
+  });
+  return [(ch[0]*255)|0, (ch[1]*255)|0, (ch[2]*255)|0];
+}
+
 export function transformPalette(palette, usedK, satMul, colorMode) {
-  // Task 4 fills this in. For now, pass-through.
+  for (let i = 0; i < usedK; i++) {
+    const p = i * 3;
+    let r = palette[p], g = palette[p+1], b = palette[p+2];
+
+    // saturation boost in HSL
+    const [h, s, l] = rgbToHsl(r, g, b);
+    const s2 = Math.min(1, s * satMul);
+    [r, g, b] = hslToRgb(h, s2, l);
+
+    // color mode transform
+    if (colorMode === 'bw') {
+      const y = (r * 0.299 + g * 0.587 + b * 0.114) | 0;
+      r = g = b = y;
+    } else if (colorMode === 'invert') {
+      r = 255 - r; g = 255 - g; b = 255 - b;
+    }
+    palette[p] = r; palette[p+1] = g; palette[p+2] = b;
+  }
   return palette;
 }
 
