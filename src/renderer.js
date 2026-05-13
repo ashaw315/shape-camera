@@ -14,6 +14,7 @@ let indices = null;            // Uint8Array, sw*sh
 let indicesScratch = null;     // Uint8Array, sw*sh — used by modeFilter for read-from copy
 let edgeMask = null;           // Uint8Array, sw*sh
 let edgeScratch = null;        // Uint8Array, sw*sh — used by morphClose for the dilated state
+const paletteOriginal = new Uint8Array(16 * 3);  // pre-transform palette for edge-distance compare; max 16 entries
 let outBuf = null;             // Uint8ClampedArray, sw*sh*4
 let workCanvas = null;         // OffscreenCanvas | HTMLCanvasElement
 let workCtx = null;
@@ -326,14 +327,20 @@ export function render(ctx, sourceData, sw, sh, outW, outH, opts) {
   // 3. mode-filter cleanup on indices
   modeFilter(indices, sw, sh, indicesScratch);
 
+  // Snapshot the original quantized palette so palette-distance edge suppression
+  // (step 6) can use it. transformPalette below mutates q.palette in place; in
+  // bw mode that collapses RGB→luminance and would poison the distance compare.
+  paletteOriginal.set(q.palette.subarray(0, q.usedK * 3));
+
   // 4. palette transform (saturation boost + color mode)
   const palette = transformPalette(q.palette, q.usedK, 1.9, colorMode);
 
   // 5. edge detection (boundary only)
   detectEdges(indices, sw, sh, edgeMask);
 
-  // 6. palette-distance edge suppression
-  suppressLowContrastEdges(edgeMask, indices, palette, sw, sh, minEdgeContrast);
+  // 6. palette-distance edge suppression (uses ORIGINAL pre-transform palette
+  // so bw/invert color modes don't distort the RGB distance calculation).
+  suppressLowContrastEdges(edgeMask, indices, paletteOriginal, sw, sh, minEdgeContrast);
 
   // 7. morphological close
   morphClose(edgeMask, sw, sh, edgeScratch);
