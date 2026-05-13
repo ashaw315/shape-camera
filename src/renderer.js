@@ -10,32 +10,43 @@
 // ── module-scope reusable buffers ──
 let bufSW = 0, bufSH = 0;
 let smoothBuf = null;          // Uint8ClampedArray, sw*sh*4
+let smoothBuf2 = null;         // Uint8ClampedArray, sw*sh*4 — second smooth buffer for multi-pass bilateral
 let indices = null;            // Uint8Array, sw*sh
 let indicesScratch = null;     // Uint8Array, sw*sh — used by modeFilter for read-from copy
 let edgeMask = null;           // Uint8Array, sw*sh
 let edgeScratch = null;        // Uint8Array, sw*sh — used by morphClose for the dilated state
 const paletteOriginal = new Uint8Array(16 * 3);  // pre-transform palette for edge-distance compare; max 16 entries
-let outBuf = null;             // Uint8ClampedArray, sw*sh*4
-let workCanvas = null;         // OffscreenCanvas | HTMLCanvasElement
-let workCtx = null;
+let colorBuf = null;           // Uint8ClampedArray, sw*sh*4 — color regions (alpha=255 everywhere)
+let edgeBuf = null;            // Uint8ClampedArray, sw*sh*4 — edges with transparent background
+let colorCanvas = null;        // OffscreenCanvas | HTMLCanvasElement
+let colorCtx = null;
+let edgeCanvas = null;
+let edgeCtx = null;
 
 function ensureBuffers(sw, sh) {
   if (sw === bufSW && sh === bufSH) return;
   bufSW = sw; bufSH = sh;
   const n = sw * sh;
   smoothBuf = new Uint8ClampedArray(n * 4);
+  smoothBuf2 = new Uint8ClampedArray(n * 4);
   indices = new Uint8Array(n);
   indicesScratch = new Uint8Array(n);
   edgeMask = new Uint8Array(n);
   edgeScratch = new Uint8Array(n);
-  outBuf = new Uint8ClampedArray(n * 4);
+  colorBuf = new Uint8ClampedArray(n * 4);
+  edgeBuf = new Uint8ClampedArray(n * 4);
+
   if (typeof OffscreenCanvas !== 'undefined') {
-    workCanvas = new OffscreenCanvas(sw, sh);
+    colorCanvas = new OffscreenCanvas(sw, sh);
+    edgeCanvas = new OffscreenCanvas(sw, sh);
   } else {
-    workCanvas = document.createElement('canvas');
-    workCanvas.width = sw; workCanvas.height = sh;
+    colorCanvas = document.createElement('canvas');
+    colorCanvas.width = sw; colorCanvas.height = sh;
+    edgeCanvas = document.createElement('canvas');
+    edgeCanvas.width = sw; edgeCanvas.height = sh;
   }
-  workCtx = workCanvas.getContext('2d');
+  colorCtx = colorCanvas.getContext('2d');
+  edgeCtx = edgeCanvas.getContext('2d');
 }
 
 // ── pure pipeline functions (stubs filled in later tasks) ──
@@ -141,6 +152,61 @@ export function medianCutQuantize(rgba, sw, sh, k, indicesOut) {
   return { palette, usedK };
 }
 
+function mergeSimilarPalette(palette, indices, paletteSize, minDistance) {
+  // minDistance: minimum RGB euclidean distance between palette entries.
+  // Any two entries closer than this get merged into one.
+
+  const merged = new Array(paletteSize).fill(-1); // maps old index → new index
+  let newCount = 0;
+
+  for (let i = 0; i < paletteSize; i++) {
+    if (merged[i] !== -1) continue; // already merged into another
+    merged[i] = newCount;
+
+    const r1 = palette[i * 3], g1 = palette[i * 3 + 1], b1 = palette[i * 3 + 2];
+
+    // Find all later entries close to this one and merge them
+    for (let j = i + 1; j < paletteSize; j++) {
+      if (merged[j] !== -1) continue;
+      const r2 = palette[j * 3], g2 = palette[j * 3 + 1], b2 = palette[j * 3 + 2];
+      const dr = r1 - r2, dg = g1 - g2, db = b1 - b2;
+      const distSq = dr*dr + dg*dg + db*db;
+
+      if (distSq < minDistance * minDistance) {
+        merged[j] = newCount; // map to same new index
+      }
+    }
+
+    newCount++;
+  }
+
+  // Rebuild palette: for each new index, average all old entries that mapped to it
+  const newPalette = new Uint8Array(newCount * 3);
+  const counts = new Uint8Array(newCount);
+  const sums = new Float32Array(newCount * 3);
+
+  for (let i = 0; i < paletteSize; i++) {
+    const ni = merged[i];
+    sums[ni * 3]     += palette[i * 3];
+    sums[ni * 3 + 1] += palette[i * 3 + 1];
+    sums[ni * 3 + 2] += palette[i * 3 + 2];
+    counts[ni]++;
+  }
+
+  for (let i = 0; i < newCount; i++) {
+    newPalette[i * 3]     = Math.round(sums[i * 3] / counts[i]);
+    newPalette[i * 3 + 1] = Math.round(sums[i * 3 + 1] / counts[i]);
+    newPalette[i * 3 + 2] = Math.round(sums[i * 3 + 2] / counts[i]);
+  }
+
+  // Remap indices
+  for (let i = 0; i < indices.length; i++) {
+    indices[i] = merged[indices[i]];
+  }
+
+  return { palette: newPalette, paletteSize: newCount };
+}
+
 function modeFilter(indices, sw, sh, scratch) {
   scratch.set(indices);
   const counts = new Uint8Array(16);
@@ -200,9 +266,8 @@ export function transformPalette(palette, usedK, satMul, colorMode) {
     // saturation boost in HSL
     const [h, s, l] = rgbToHsl(r, g, b);
     if (l >= 0.08 && l <= 0.92) {
-      // boost saturation, enforce minimum floor
-      let s2 = Math.min(1, s * satMul);
-      if (s2 < 0.2) s2 = 0.2;
+      // boost saturation, no floor — leave near-grays near-gray
+      const s2 = Math.min(1, s * satMul);
       [r, g, b] = hslToRgb(h, s2, l);
     }
     // else: leave r/g/b unchanged (near-black or near-white)
@@ -312,60 +377,90 @@ export function render(ctx, sourceData, sw, sh, outW, outH, opts) {
   const { simplification, colorMode } = opts;
   ensureBuffers(sw, sh);
 
-  const paletteSize = Math.round(16 + (5 - 16) * simplification);   // 16..5
-  const bilateralRadius = 1 + simplification * 1;                    // 1..2
-  const sigmaColor = 20 + simplification * 20;                       // 20..40
+  const paletteSize = Math.round(16 + (5 - 16) * simplification);    // 16..5
+  const bilateralRadius = Math.round(2 + simplification * 2);        // 2..4 (kernel 5x5..9x9)
+  const sigmaColor = 25 + simplification * 30;                       // 25..55
+  const blurPasses = Math.round(1 + simplification * 1);             // 1..2 passes
   const edgeThickness = Math.round(1 + simplification * 2);          // 1..3
   const minEdgeContrast = 30 + simplification * 20;                  // 30..50
+  const mergeMinDistance = 35 + simplification * 20;                 // 35..55
 
-  // 1. bilateral smooth
-  bilateralSmooth(sourceData.data, sw, sh, bilateralRadius, sigmaColor, smoothBuf);
+  // 1. bilateral smooth (1..2 passes, ping-pong between smoothBuf and smoothBuf2)
+  let bSrc = sourceData.data, bDst = smoothBuf;
+  for (let pass = 0; pass < blurPasses; pass++) {
+    bilateralSmooth(bSrc, sw, sh, bilateralRadius, sigmaColor, bDst);
+    // for next pass, read from what we just wrote
+    bSrc = bDst;
+    bDst = (bDst === smoothBuf) ? smoothBuf2 : smoothBuf;
+  }
+  // After loop, the freshest result is in `bSrc`.
+  const smoothed = bSrc;
 
   // 2. median-cut quantize
-  const q = medianCutQuantize(smoothBuf, sw, sh, paletteSize, indices);
+  let q = medianCutQuantize(smoothed, sw, sh, paletteSize, indices);
 
-  // 3. mode-filter cleanup on indices
+  // 3. palette merge (collapse near-duplicate entries)
+  const merged = mergeSimilarPalette(q.palette, indices, q.usedK, mergeMinDistance);
+  q = { palette: merged.palette, usedK: merged.paletteSize };
+
+  // 4. mode-filter cleanup on indices
   modeFilter(indices, sw, sh, indicesScratch);
 
-  // Snapshot the original quantized palette so palette-distance edge suppression
-  // (step 6) can use it. transformPalette below mutates q.palette in place; in
+  // Snapshot the merged quantized palette so palette-distance edge suppression
+  // (step 7) can use it. transformPalette below mutates q.palette in place; in
   // bw mode that collapses RGB→luminance and would poison the distance compare.
   paletteOriginal.set(q.palette.subarray(0, q.usedK * 3));
 
-  // 4. palette transform (saturation boost + color mode)
+  // 5. palette transform (saturation boost + color mode)
   const palette = transformPalette(q.palette, q.usedK, 1.9, colorMode);
 
-  // 5. edge detection (boundary only)
+  // 6. edge detection (boundary only)
   detectEdges(indices, sw, sh, edgeMask);
 
-  // 6. palette-distance edge suppression (uses ORIGINAL pre-transform palette
+  // 7. palette-distance edge suppression (uses ORIGINAL pre-transform palette
   // so bw/invert color modes don't distort the RGB distance calculation).
   suppressLowContrastEdges(edgeMask, indices, paletteOriginal, sw, sh, minEdgeContrast);
 
-  // 7. morphological close
+  // 8. morphological close
   morphClose(edgeMask, sw, sh, edgeScratch);
 
-  // 8. edge dilation for thickness
+  // 9. edge dilation for thickness
   dilateEdges(edgeMask, sw, sh, edgeThickness, edgeScratch);
 
-  // 9. composite
+  // 10. two-pass composite: color regions into colorBuf, edges into edgeBuf (transparent bg).
   for (let i = 0; i < sw * sh; i++) {
     const o = i * 4;
+    const p = indices[i] * 3;
+    // colorBuf: always solid color (no edges)
+    colorBuf[o]     = palette[p];
+    colorBuf[o + 1] = palette[p + 1];
+    colorBuf[o + 2] = palette[p + 2];
+    colorBuf[o + 3] = 255;
+    // edgeBuf: near-black on edge, transparent elsewhere
     if (edgeMask[i]) {
-      outBuf[o] = 10; outBuf[o + 1] = 10; outBuf[o + 2] = 10; outBuf[o + 3] = 255;
+      edgeBuf[o]     = 10;
+      edgeBuf[o + 1] = 10;
+      edgeBuf[o + 2] = 10;
+      edgeBuf[o + 3] = 255;
     } else {
-      const p = indices[i] * 3;
-      outBuf[o] = palette[p];
-      outBuf[o + 1] = palette[p + 1];
-      outBuf[o + 2] = palette[p + 2];
-      outBuf[o + 3] = 255;
+      edgeBuf[o]     = 0;
+      edgeBuf[o + 1] = 0;
+      edgeBuf[o + 2] = 0;
+      edgeBuf[o + 3] = 0;
     }
   }
 
-  const img = new ImageData(outBuf, sw, sh);
-  workCtx.putImageData(img, 0, 0);
+  colorCtx.putImageData(new ImageData(colorBuf, sw, sh), 0, 0);
+  edgeCtx.putImageData(new ImageData(edgeBuf, sw, sh), 0, 0);
+
+  // Color regions: smooth upscale (eliminates pixel staircases on region boundaries).
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'medium';
+  ctx.drawImage(colorCanvas, 0, 0, outW, outH);
+
+  // Edge overlay: nearest-neighbor (crisp lines).
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(workCanvas, 0, 0, outW, outH);
+  ctx.drawImage(edgeCanvas, 0, 0, outW, outH);
 
   return { levels: q.usedK };
 }
