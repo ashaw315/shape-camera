@@ -41,7 +41,7 @@ export function bilateralSmooth(src, sw, sh, radius, sigmaColor, dst) {
   return dst;
 }
 
-export function medianCutQuantize(rgba, sw, sh, k) {
+export function medianCutQuantize(rgba, sw, sh, k, indicesOut) {
   // Task 3 fills this in. Placeholder: one-entry palette = mean color, all indices 0.
   let r = 0, g = 0, b = 0;
   const n = sw * sh;
@@ -54,8 +54,8 @@ export function medianCutQuantize(rgba, sw, sh, k) {
   palette[0] = Math.round(r / n);
   palette[1] = Math.round(g / n);
   palette[2] = Math.round(b / n);
-  const idx = new Uint8Array(n); // all zeros
-  return { palette, indices: idx, usedK: 1 };
+  indicesOut.fill(0);
+  return { palette, usedK: 1 };
 }
 
 export function transformPalette(palette, usedK, satMul, colorMode) {
@@ -82,9 +82,7 @@ export function render(ctx, sourceData, sw, sh, outW, outH, opts) {
 
   bilateralSmooth(sourceData.data, sw, sh, bilateralRadius, sigmaColor, smoothBuf);
 
-  const q = medianCutQuantize(smoothBuf, sw, sh, paletteSize);
-  // reuse module-scope indices buffer
-  indices.set(q.indices);
+  const q = medianCutQuantize(smoothBuf, sw, sh, paletteSize, indices);
   const palette = transformPalette(q.palette, q.usedK, 1.4, colorMode);
 
   detectEdges(indices, sw, sh, edgeThickness, edgeMask);

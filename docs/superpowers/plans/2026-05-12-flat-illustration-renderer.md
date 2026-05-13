@@ -82,7 +82,7 @@ export function bilateralSmooth(src, sw, sh, radius, sigmaColor, dst) {
   return dst;
 }
 
-export function medianCutQuantize(rgba, sw, sh, k) {
+export function medianCutQuantize(rgba, sw, sh, k, indicesOut) {
   // Task 3 fills this in. Placeholder: one-entry palette = mean color, all indices 0.
   let r = 0, g = 0, b = 0;
   const n = sw * sh;
@@ -95,8 +95,8 @@ export function medianCutQuantize(rgba, sw, sh, k) {
   palette[0] = Math.round(r / n);
   palette[1] = Math.round(g / n);
   palette[2] = Math.round(b / n);
-  const idx = new Uint8Array(n); // all zeros
-  return { palette, indices: idx, usedK: 1 };
+  indicesOut.fill(0);
+  return { palette, usedK: 1 };
 }
 
 export function transformPalette(palette, usedK, satMul, colorMode) {
@@ -123,9 +123,7 @@ export function render(ctx, sourceData, sw, sh, outW, outH, opts) {
 
   bilateralSmooth(sourceData.data, sw, sh, bilateralRadius, sigmaColor, smoothBuf);
 
-  const q = medianCutQuantize(smoothBuf, sw, sh, paletteSize);
-  // reuse module-scope indices buffer
-  indices.set(q.indices);
+  const q = medianCutQuantize(smoothBuf, sw, sh, paletteSize, indices);
   const palette = transformPalette(q.palette, q.usedK, 1.4, colorMode);
 
   detectEdges(indices, sw, sh, edgeThickness, edgeMask);
@@ -352,7 +350,8 @@ Append inside the `<script>` block:
     const c = regions[Math.floor(i/4)];
     rgba[i*4] = c[0]; rgba[i*4+1] = c[1]; rgba[i*4+2] = c[2]; rgba[i*4+3] = 255;
   }
-  const { palette, indices, usedK } = medianCutQuantize(rgba, sw, sh, 4);
+  const indices = new Uint8Array(sw * sh);
+  const { palette, usedK } = medianCutQuantize(rgba, sw, sh, 4, indices);
   console.assert(usedK >= 3, 'quantize: usedK should be >=3', usedK);
 
   // each region's pixels should share an index
@@ -374,7 +373,7 @@ The stub returns `usedK: 1` and all-zero indices, so the first three asserts fai
 Replace the stub with:
 
 ```js
-export function medianCutQuantize(rgba, sw, sh, k) {
+export function medianCutQuantize(rgba, sw, sh, k, indicesOut) {
   // Build sample list — every other pixel in x and y (4x downsample).
   const sampleStride = 2;
   const samples = [];
@@ -432,7 +431,6 @@ export function medianCutQuantize(rgba, sw, sh, k) {
 
   // Assign every full-res pixel its nearest palette index
   const n = sw * sh;
-  const idx = new Uint8Array(n);
   for (let i = 0; i < n; i++) {
     const r = rgba[i*4], g = rgba[i*4+1], b = rgba[i*4+2];
     let bestI = 0, bestD = Infinity;
@@ -441,10 +439,10 @@ export function medianCutQuantize(rgba, sw, sh, k) {
       const d = dr*dr + dg*dg + db*db;
       if (d < bestD) { bestD = d; bestI = p; }
     }
-    idx[i] = bestI;
+    indicesOut[i] = bestI;
   }
 
-  return { palette, indices: idx, usedK };
+  return { palette, usedK };
 }
 ```
 
