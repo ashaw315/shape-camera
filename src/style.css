@@ -1,6 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500&family=Instrument+Serif:ital@0;1&display=swap');
 
-/* ── RESET ── */
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
 :root {
@@ -8,6 +7,7 @@
   --fg: #e8e4df;
   --dim: rgba(232, 228, 223, 0.25);
   --accent: rgba(196, 181, 160, 0.7);
+  --warn: rgba(220, 80, 80, 0.7);
   --mono: 'JetBrains Mono', monospace;
   --serif: 'Instrument Serif', serif;
   --safe-b: env(safe-area-inset-bottom, 0px);
@@ -28,14 +28,6 @@ html, body {
 }
 
 .hidden { display: none !important; }
-
-/* ── CANVAS ── */
-#output {
-  position: fixed;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
-  display: block;
-}
 
 /* ── START SCREEN ── */
 #start-screen {
@@ -89,12 +81,11 @@ html, body {
   border: 1px solid rgba(232, 228, 223, 0.2);
   color: var(--fg);
   padding: 1.1rem 3rem;
-  cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition: border-color 0.25s ease, background 0.25s ease;
 }
 
-#btn-start:hover, #btn-start:active {
+#btn-start:active {
   border-color: rgba(232, 228, 223, 0.45);
   background: rgba(232, 228, 223, 0.04);
 }
@@ -112,142 +103,116 @@ html, body {
   margin-top: 1.4rem;
 }
 
-/* ── UI CHROME ── */
+/* ── MAIN UI: split portrait layout ── */
 #ui {
   position: fixed;
   inset: 0;
-  z-index: 10;
-  pointer-events: none;
-}
-
-#ui > * { pointer-events: auto; }
-
-/* ── TOP BAR ── */
-#top-bar {
-  position: absolute;
-  top: 0; left: 0; right: 0;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: calc(var(--safe-t) + 0.8rem) 1rem 0.8rem;
+  flex-direction: column;
+  padding-top: var(--safe-t);
+  padding-bottom: var(--safe-b);
 }
 
-.icon-btn {
-  background: rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+#composition-area {
+  position: relative;
+  flex: 0 0 55%;
+  background: #0a0a0a;
+  overflow: hidden;
+}
+
+#composition {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#viewfinder-area {
+  position: relative;
+  flex: 0 0 35%;
+  background: #050505;
+  overflow: hidden;
+  border-top: 1px solid rgba(232, 228, 223, 0.06);
+  border-bottom: 1px solid rgba(232, 228, 223, 0.06);
+}
+
+#viewfinder {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#controls {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.4rem 0.5rem;
+  background: #050505;
+}
+
+#palette-row, #action-row {
+  display: flex;
+  gap: 4px;
+}
+
+.palette-btn, .action-btn {
+  flex: 1;
+  min-height: 44px;
+  font-family: var(--mono);
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: clamp(0.55rem, 2.4vw, 0.65rem);
+  background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(232, 228, 223, 0.08);
   color: rgba(232, 228, 223, 0.5);
-  width: 40px;
-  height: 40px;
+  -webkit-tap-highlight-color: transparent;
+  transition: all 0.15s ease;
+  border-radius: 4px;
+}
+
+.palette-btn:active, .action-btn:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.palette-btn.active {
+  border-color: rgba(196, 181, 160, 0.5);
+  color: rgba(232, 228, 223, 0.95);
+  background: rgba(196, 181, 160, 0.1);
+}
+
+.action-btn.armed {
+  border-color: var(--warn);
+  color: var(--warn);
+  background: rgba(220, 80, 80, 0.08);
+}
+
+/* ── SAVE BUTTON (top right of composition) ── */
+.icon-btn {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 1px solid rgba(232, 228, 223, 0.1);
+  color: rgba(232, 228, 223, 0.7);
+  width: 44px;
+  height: 44px;
   border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
+  z-index: 5;
 }
 
-.icon-btn:hover, .icon-btn:active {
-  border-color: rgba(232, 228, 223, 0.2);
-  color: rgba(232, 228, 223, 0.8);
-  background: rgba(0, 0, 0, 0.5);
+.icon-btn:active {
+  background: rgba(0, 0, 0, 0.6);
 }
 
 .icon-btn.flash {
   border-color: var(--accent);
   color: var(--accent);
-}
-
-#grid-label {
-  font-size: 0.5rem;
-  font-weight: 300;
-  color: rgba(232, 228, 223, 0.2);
-  letter-spacing: 0.1em;
-}
-
-/* ── FREEZE BADGE ── */
-#freeze-badge {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 0.55rem;
-  font-weight: 400;
-  color: rgba(220, 80, 80, 0.6);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  pointer-events: none;
-  background: rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  padding: 0.4rem 0.8rem;
-  border-radius: 4px;
-}
-
-/* ── BOTTOM BAR ── */
-#bottom-bar {
-  position: absolute;
-  bottom: 0; left: 0; right: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  padding: 0 0.5rem calc(var(--safe-b) + 0.6rem);
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.55));
-}
-
-#shape-modes, #color-modes, #palette-row, #modifier-row {
-  display: flex;
-  gap: 3px;
-}
-
-.mode-btn, .color-btn, .palette-btn, .modifier-btn {
-  flex: 1;
-  font-family: var(--mono);
-  font-weight: 400;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  background: rgba(0, 0, 0, 0.25);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(232, 228, 223, 0.06);
-  color: rgba(232, 228, 223, 0.3);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: all 0.2s ease;
-  border-radius: 4px;
-}
-
-.mode-btn, .palette-btn {
-  font-size: clamp(0.52rem, 2.2vw, 0.62rem);
-  padding: 0.85rem 0.3rem;
-}
-
-.color-btn, .modifier-btn {
-  font-size: clamp(0.45rem, 1.8vw, 0.52rem);
-  padding: 0.55rem 0.3rem;
-}
-
-.mode-btn.active, .palette-btn.active {
-  border-color: rgba(196, 181, 160, 0.35);
-  color: rgba(196, 181, 160, 0.9);
-  background: rgba(196, 181, 160, 0.08);
-}
-
-.color-btn.active, .modifier-btn.active {
-  border-color: rgba(232, 228, 223, 0.15);
-  color: rgba(232, 228, 223, 0.7);
-  background: rgba(232, 228, 223, 0.06);
-}
-
-/* ── DESKTOP CURSOR ── */
-@media (hover: hover) {
-  body { cursor: crosshair; }
-}
-
-/* ── SAVE FLASH ── */
-@keyframes save-flash {
-  0% { opacity: 1; }
-  100% { opacity: 0; }
 }

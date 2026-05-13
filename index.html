@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/src/style.css">
 </head>
 <body>
-  <canvas id="output"></canvas>
+  <!-- Hidden source canvas + video -->
   <canvas id="source" style="display:none;"></canvas>
   <video id="video" playsinline autoplay muted style="display:none;"></video>
 
@@ -15,25 +15,18 @@
   <div id="start-screen">
     <div class="start-inner">
       <h1>Shape Camera</h1>
-      <p class="tagline">your world, distilled to geometry</p>
+      <p class="tagline">stamp the world in flat color</p>
       <button id="btn-start">Enable Camera</button>
       <span class="note">requires camera permission</span>
     </div>
   </div>
 
-  <!-- CONTROLS -->
+  <!-- MAIN UI -->
   <div id="ui" class="hidden">
-
-    <!-- TOP BAR -->
-    <div id="top-bar">
-      <button id="btn-flip" class="icon-btn" aria-label="Flip camera">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M16 3h5v5"/><path d="M8 21H3v-5"/>
-          <path d="M21 3l-7 7"/><path d="M3 21l7-7"/>
-        </svg>
-      </button>
-      <div id="grid-label"></div>
-      <button id="btn-save" class="icon-btn" aria-label="Save screenshot">
+    <!-- Composition area (top 55%) -->
+    <div id="composition-area">
+      <canvas id="composition"></canvas>
+      <button id="btn-save" class="icon-btn" aria-label="Save composition">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
           <polyline points="7 10 12 15 17 10"/>
@@ -42,21 +35,22 @@
       </button>
     </div>
 
-    <!-- FREEZE INDICATOR -->
-    <div id="freeze-badge" class="hidden">● hold</div>
+    <!-- Viewfinder (mid 35%) -->
+    <div id="viewfinder-area">
+      <canvas id="viewfinder"></canvas>
+    </div>
 
-    <!-- BOTTOM BAR -->
-    <div id="bottom-bar">
+    <!-- Controls (bottom 10%) -->
+    <div id="controls">
       <div id="palette-row">
         <button class="palette-btn active" data-palette="bold">Bold</button>
         <button class="palette-btn" data-palette="warm">Warm</button>
         <button class="palette-btn" data-palette="cool">Cool</button>
         <button class="palette-btn" data-palette="pop">Pop</button>
       </div>
-      <div id="modifier-row">
-        <button class="modifier-btn" data-modifier="bw">B&amp;W</button>
-        <button class="modifier-btn" data-modifier="invert">Invert</button>
-        <button class="modifier-btn" data-modifier="edges">Edges</button>
+      <div id="action-row">
+        <button id="btn-undo" class="action-btn">↩ Undo</button>
+        <button id="btn-clear" class="action-btn">✕ Clear</button>
       </div>
     </div>
   </div>
