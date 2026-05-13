@@ -165,6 +165,4 @@ export function renderViewfinder(ctx, sourceData, sw, sh, outX, outY, outW, outH
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(tinyCanvas, outX, outY, outW, outH);
-
-  return tinyCanvas;
 }

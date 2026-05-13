@@ -52,6 +52,19 @@ function layout() {
   const w = window.innerWidth;
   const h = window.innerHeight;
 
+  // Snapshot the composition before resizing. Setting canvas.width clears the canvas,
+  // so we must capture pixels first. On rotation the snapshot will be clipped to the
+  // new (smaller) dimensions by putImageData — acceptable.
+  let snap = null;
+  if (compW && compH && composition.width > 0) {
+    try {
+      snap = cctx.getImageData(0, 0, compW, compH);
+    } catch (e) {
+      // tainted-canvas guard; should never trigger but defensive
+      snap = null;
+    }
+  }
+
   // Composition: top 55%
   compW = w;
   compH = Math.floor(h * 0.55);
@@ -76,8 +89,13 @@ function layout() {
   sourceCanvas.width = SW;
   sourceCanvas.height = SH;
 
-  // Re-fill composition cream (clears it on resize — accept; rotating during use is rare)
+  // Set persistent composition draw quality (used by stamps).
+  cctx.imageSmoothingEnabled = true;
+  cctx.imageSmoothingQuality = 'high';
+
+  // Restore composition: cream background first, then layer the prior snapshot.
   fillCream();
+  if (snap) cctx.putImageData(snap, 0, 0);
 }
 
 function fillCream() {
@@ -202,8 +220,6 @@ function stampAt(vx, vy) {
   // centered on the tap, scaled into the composition's circle.
   // srcRect on viewfinder: (vx - radius, vy - radius, 2*radius, 2*radius)
   // dstRect on composition: same circle, but scaled by compW/vfW.
-  cctx.imageSmoothingEnabled = true;
-  cctx.imageSmoothingQuality = 'high';
   cctx.drawImage(
     viewfinder,
     vx - radius, vy - radius, 2 * radius, 2 * radius,
