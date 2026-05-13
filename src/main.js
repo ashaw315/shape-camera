@@ -27,7 +27,6 @@ let running = false;
 let inputX = 0.5;
 let isTouching = false;
 let frozenData = null;
-let shapeMode = 'squares';
 let colorMode = 'normal';
 
 const isMobile = 'ontouchstart' in window;
@@ -96,29 +95,9 @@ document.addEventListener('mouseup', () => {
 
 // Keyboard shortcuts
 document.addEventListener('keydown', e => {
-  if (e.key === '1') setShape('squares');
-  if (e.key === '2') setShape('lines');
   if (e.key === 'c') cycleColor();
   if (e.key === 'f') flipCamera();
   if (e.key === 's' && !e.metaKey && !e.ctrlKey) saveScreenshot();
-});
-
-// ── SHAPE MODE ──
-function setShape(mode) {
-  shapeMode = mode;
-  document.querySelectorAll('.mode-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.mode === mode);
-  });
-}
-
-document.querySelectorAll('.mode-btn').forEach(btn => {
-  const stop = e => e.stopPropagation();
-  btn.addEventListener('touchstart', stop);
-  btn.addEventListener('touchend', stop);
-  btn.addEventListener('click', e => {
-    e.stopPropagation();
-    setShape(btn.dataset.mode);
-  });
 });
 
 // ── COLOR MODE ──
@@ -216,17 +195,12 @@ function loop() {
     sourceData = sctx.getImageData(0, 0, SW, SH);
   }
 
-  // cell size: 3px (fine) → 60px (chunky) in source-canvas space
-  const minCell = 3;
-  const maxCell = 60;
-  const cellSize = Math.round(minCell + inputX * (maxCell - minCell));
-
   // render
-  const { cols, rows } = render(
+  const { levels } = render(
     ctx, sourceData, SW, SH,
     output.width, output.height,
-    { cellSize, shapeMode, colorMode },
+    { simplification: inputX, colorMode },
   );
 
-  gridLabel.textContent = `${cols}×${rows}`;
+  gridLabel.textContent = `${levels} colors`;
 }
