@@ -197,12 +197,12 @@ html, body {
   background: linear-gradient(transparent, rgba(0, 0, 0, 0.55));
 }
 
-#shape-modes, #color-modes {
+#shape-modes, #color-modes, #palette-row, #modifier-row {
   display: flex;
   gap: 3px;
 }
 
-.mode-btn, .color-btn {
+.mode-btn, .color-btn, .palette-btn, .modifier-btn {
   flex: 1;
   font-family: var(--mono);
   font-weight: 400;
@@ -219,23 +219,23 @@ html, body {
   border-radius: 4px;
 }
 
-.mode-btn {
+.mode-btn, .palette-btn {
   font-size: clamp(0.52rem, 2.2vw, 0.62rem);
   padding: 0.85rem 0.3rem;
 }
 
-.color-btn {
+.color-btn, .modifier-btn {
   font-size: clamp(0.45rem, 1.8vw, 0.52rem);
   padding: 0.55rem 0.3rem;
 }
 
-.mode-btn.active {
+.mode-btn.active, .palette-btn.active {
   border-color: rgba(196, 181, 160, 0.35);
   color: rgba(196, 181, 160, 0.9);
   background: rgba(196, 181, 160, 0.08);
 }
 
-.color-btn.active {
+.color-btn.active, .modifier-btn.active {
   border-color: rgba(232, 228, 223, 0.15);
   color: rgba(232, 228, 223, 0.7);
   background: rgba(232, 228, 223, 0.06);
